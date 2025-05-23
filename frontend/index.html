@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notification System</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 1rem;
+    }
+    
+    h1 {
+      color: #333;
+      margin: 0;
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    
+    .status-connected {
+      background-color: #4CAF50;
+    }
+    
+    .status-disconnected {
+      background-color: #F44336;
+    }
+    
+    .user-info {
+      background-color: #e0e0e0;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      margin-bottom: 1.5rem;
+      display: inline-block;
+    }
+    
+    #notifications {
+      margin-top: 1rem;
+      list-style-type: none;
+      padding: 0;
+    }
+    
+    .notification {
+      background-color: white;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 0.8rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border-left: 4px solid #2196F3;
+      transition: transform 0.2s ease;
+    }
+    
+    .notification:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .notification.order_created {
+      border-left-color: #4CAF50;
+    }
+    
+    .notification.payment_received {
+      border-left-color: #9C27B0;
+    }
+    
+    .notification.order_shipped {
+      border-left-color: #FF9800;
+    }
+    
+    .notification.new_message {
+      border-left-color: #2196F3;
+    }
+    
+    .notification.system_alert {
+      border-left-color: #F44336;
+    }
+    
+    .notification-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      font-size: 0.8rem;
+      color: #757575;
+    }
+    
+    .notification-type {
+      text-transform: uppercase;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    
+    .notification-time {
+      font-style: italic;
+    }
+    
+    .notification-message {
+      font-size: 1rem;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: #757575;
+    }
+    
+    .connection-error {
+      background-color: #FFEBEE;
+      color: #D32F2F;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    
+    button {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background-color 0.2s;
+    }
+    
+    button:hover {
+      background-color: #1976D2;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>🔔 Notification Center</h1>
+    <div class="status">
+      <span class="status-indicator status-disconnected" id="status-indicator"></span>
+      <span id="connection-status">Disconnected</span>
+    </div>
+  </header>
+  
+  <div class="user-info">
+    Connected as User: <strong id="user-id">12345</strong>
+  </div>
+  
+  <div id="connection-error" class="connection-error">
+    Connection to notification server failed. 
+    <button id="reconnect-button">Reconnect</button>
+  </div>
+  
+  <ul id="notifications">
+    <li class="empty-state" id="empty-state">
+      No notifications yet. Waiting for messages...
+    </li>
+  </ul>
+</div>
+
+<script>
+  // DOM Elements
+  const notificationList = document.getElementById('notifications');
+  const emptyState = document.getElementById('empty-state');
+  const connectionStatus = document.getElementById('connection-status');
+  const statusIndicator = document.getElementById('status-indicator');
+  const connectionError = document.getElementById('connection-error');
+  const reconnectButton = document.getElementById('reconnect-button');
+  const userIdElement = document.getElementById('user-id');
+  
+  // Simulated user ID (replace with real one from login/session in real app)
+  const userId = '12345';
+  userIdElement.textContent = userId;
+  
+  // WebSocket connection
+  let socket;
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = 5;
+  
+  function connectWebSocket() {
+    // Use path-based connection instead of query params which can be problematic
+    socket = new WebSocket(`ws://localhost:8080`);
+    
+    // When a message is received, show it
+    socket.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Hide empty state on first notification
+        if (emptyState && !emptyState.classList.contains('hidden')) {
+          emptyState.classList.add('hidden');
+        }
+        
+        // Create notification element
+        const li = document.createElement('li');
+        li.className = `notification ${data.type || 'default'}`;
+        
+        // Format timestamp
+        let timeDisplay = 'Just now';
+        if (data.timestamp) {
+          try {
+            const date = new Date(data.timestamp);
+            timeDisplay = date.toLocaleTimeString();
+          } catch (e) {
+            console.error('Error parsing timestamp:', e);
+          }
+        }
+        
+        // Create notification content
+        li.innerHTML = `
+          <div class="notification-header">
+            <span class="notification-type">${data.type || 'Notification'}</span>
+            <span class="notification-time">${timeDisplay}</span>
+          </div>
+          <div class="notification-message">${data.message}</div>
+        `;
+        
+        notificationList.prepend(li); // Newest on top
+      } catch (error) {
+        console.error('Error processing message:', error);
+      }
+    };
+    
+    socket.onopen = () => {
+      console.log('✅ Connected to notification server');
+      connectionStatus.textContent = 'Connected';
+      statusIndicator.classList.replace('status-disconnected', 'status-connected');
+      connectionError.style.display = 'none';
+      reconnectAttempts = 0;
+    };
+    
+    socket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      connectionStatus.textContent = 'Error';
+      statusIndicator.classList.replace('status-connected', 'status-disconnected');
+    };
+    
+    socket.onclose = () => {
+      console.warn('⚠️ WebSocket connection closed');
+      connectionStatus.textContent = 'Disconnected';
+      statusIndicator.classList.replace('status-connected', 'status-disconnected');
+      
+      if (reconnectAttempts < maxReconnectAttempts) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        console.log(`Attempting to reconnect in ${delay/1000} seconds...`);
+        setTimeout(connectWebSocket, delay);
+      } else {
+        connectionError.style.display = 'block';
+      }
+    };
+  }
+  
+  // Initial connection
+  connectWebSocket();
+  
+  // Reconnect button handler
+  reconnectButton.addEventListener('click', () => {
+    reconnectAttempts = 0;
+    connectionError.style.display = 'none';
+    connectWebSocket();
+  });
+</script>
+
+</body>
+</html>
